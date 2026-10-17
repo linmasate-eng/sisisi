@@ -14,11 +14,11 @@
         textarea, input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; outline: none; font-family: inherit; }
         textarea { resize: none; height: 100px; }
         
-        /* 剪贴板一键读取按钮样式 */
-        button.paste-btn { width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; margin-bottom: 5px; box-shadow: 0 2px 5px rgba(40,167,69,0.2); }
+        /* 剪贴板一键读取并生成按钮样式 */
+        button.paste-btn { width: 100%; padding: 14px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-bottom: 10px; box-shadow: 0 2px 5px rgba(40,167,69,0.2); }
         button.paste-btn:active { background: #218838; }
 
-        button.add-btn { width: 100%; padding: 14px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
+        button.add-btn { width: 100%; padding: 12px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 5px; }
         button.add-btn:active { background: #0056b3; }
 
         button.clear-btn { width: 100%; padding: 10px; background: #dc3545; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px; }
@@ -38,7 +38,6 @@
         
         .btn-del { position: absolute; right: 10px; top: 15px; color: #dc3545; border: none; background: #ffe1e1; border-radius: 50%; width: 28px; height: 28px; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2; }
         
-        /* 确保二维码容器样式正确 */
         .qr-box { display: flex; justify-content: center; margin-top: 10px; }
         .qr-box img, .qr-box canvas { padding: 5px; background: #fff; border: 1px solid #eee; display: block; }
     </style>
@@ -48,12 +47,12 @@
     <div class="card">
         <h2>会员二维码生成 (自动消减版)</h2>
         
-        <!-- 新增：一键读取剪贴板按钮 -->
-        <button class="paste-btn" onclick="pasteFromClipboard()">📋 一键读取剪贴板内容</button>
+        <!-- 一键读取剪贴板并自动生成的按钮 -->
+        <button class="paste-btn" onclick="pasteAndGenerate()">📋 一键读取剪贴板并生成二维码</button>
 
         <textarea id="phone" placeholder="输入会员手机号，多个号码请换行&#10;例如：&#10;13800000001&#10;13800000002"></textarea>
         <input type="text" id="note" placeholder="统一备注 (选填，如：VIP批次)">
-        <button class="add-btn" onclick="saveAndRender()">生成并保存</button>
+        <button class="add-btn" onclick="saveAndRender()">手动确认生成</button>
         <button class="clear-btn" onclick="clearAllItems()">一键清除所有会员</button>
     </div>
 
@@ -62,8 +61,8 @@
     <script>
         window.onload = renderList;
 
-        // 新增：读取剪贴板并填入输入框的函数
-        async function pasteFromClipboard() {
+        // 核心修改：读取剪贴板后直接自动执行生成逻辑，支持多行
+        async function pasteAndGenerate() {
             try {
                 if (!navigator.clipboard || !navigator.clipboard.readText) {
                     alert("当前浏览器不支持直接读取剪贴板，请长按输入框手动粘贴。");
@@ -74,7 +73,10 @@
                     alert("剪贴板内容为空！");
                     return;
                 }
+                // 将剪贴板文本放入输入框
                 document.getElementById('phone').value = text.trim();
+                // 直接自动调用保存并生成函数
+                saveAndRender();
             } catch (err) {
                 console.error("读取剪贴板失败: ", err);
                 alert("读取剪贴板权限被拒绝，请长按输入框手动粘贴。");
@@ -90,6 +92,7 @@
                 return;
             }
 
+            // 按换行符分割，支持同时读取多行号码
             let phoneArray = phoneText.split('\n').map(p => p.trim()).filter(p => p !== "");
             let history = JSON.parse(localStorage.getItem('my_qr_list_auto') || '[]');
             let maxSerial = history.reduce((max, item) => Math.max(max, item.serial || 0), 0);
@@ -102,7 +105,7 @@
                     serial: maxSerial,
                     content: phone,
                     note: note,
-                    scanCount: 0 // 初始化扫码次数为0
+                    scanCount: 0 
                 });
             });
 
@@ -114,9 +117,7 @@
             renderList();
         }
 
-        // 点击卡片任意位置（除删除按钮外）自动累加次数，满5次自动消失
         function handleCardClick(id, event) {
-            // 如果点的是右上角的删除叉号，则不触发计数，走删除逻辑
             if (event.target.classList.contains('btn-del')) return;
 
             let history = JSON.parse(localStorage.getItem('my_qr_list_auto') || '[]');
@@ -124,7 +125,6 @@
             if (item) {
                 item.scanCount = (item.scanCount || 0) + 1;
                 if (item.scanCount >= 5) {
-                    // 满5次自动从数组中过滤掉
                     history = history.filter(x => x.id !== id);
                 }
                 localStorage.setItem('my_qr_list_auto', JSON.stringify(history));
@@ -163,7 +163,6 @@
                 let qrId = "qr-" + item.id;
                 let currentCount = item.scanCount || 0;
                 
-                // 绑定点击卡片事件
                 div.onclick = (e) => handleCardClick(item.id, e);
 
                 div.innerHTML = `
