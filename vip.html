@@ -2,191 +2,59 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>会员码生成助手(剪贴板秒贴版)</title>
+    <title>会员码生成助手(自动计数版)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- 引入 qrcode.min.js 库 -->
+    <!-- 更换为更稳定的 cdnjs 官方库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-            background: #f0f2f5; 
-            padding: 15px; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            margin: 0; 
-        }
-        .card { 
-            background: white; 
-            padding: 20px; 
-            border-radius: 12px; 
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
-            width: 100%; 
-            max-width: 400px; 
-            box-sizing: border-box; 
-        }
-        h2 { 
-            margin: 0 0 15px 0; 
-            color: #007bff; 
-            font-size: 18px; 
-            text-align: center; 
-        }
+        body { font-family: sans-serif; background: #f0f2f5; padding: 15px; display: flex; flex-direction: column; align-items: center; margin: 0; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 400px; box-sizing: border-box; }
+        h2 { margin: 0 0 15px 0; color: #007bff; font-size: 18px; text-align: center; }
         
-        textarea, input, select { 
-            width: 100%; 
-            padding: 12px; 
-            margin: 8px 0; 
-            border: 1px solid #ddd; 
-            border-radius: 8px; 
-            box-sizing: border-box; 
-            font-size: 16px; 
-            outline: none; 
-            font-family: inherit; 
-        }
-        textarea { resize: none; height: 90px; }
+        textarea, input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; outline: none; font-family: inherit; }
+        textarea { resize: none; height: 100px; }
         
-        button.paste-btn { 
-            width: 100%; 
-            padding: 14px; 
-            background: #28a745; 
-            color: white; 
-            border: none; 
-            border-radius: 8px; 
-            font-size: 16px; 
-            font-weight: bold; 
-            cursor: pointer; 
-            margin-top: 5px; 
-            box-shadow: 0 4px 6px rgba(40, 167, 69, 0.2);
-        }
+        /* 剪贴板一键读取按钮样式 */
+        button.paste-btn { width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; margin-bottom: 5px; box-shadow: 0 2px 5px rgba(40,167,69,0.2); }
         button.paste-btn:active { background: #218838; }
 
-        button.add-btn { 
-            width: 100%; 
-            padding: 12px; 
-            background: #007bff; 
-            color: white; 
-            border: none; 
-            border-radius: 8px; 
-            font-size: 15px; 
-            font-weight: bold; 
-            cursor: pointer; 
-            margin-top: 8px; 
-        }
+        button.add-btn { width: 100%; padding: 14px; background: #007bff; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; }
         button.add-btn:active { background: #0056b3; }
 
-        button.clear-btn { 
-            width: 100%; 
-            padding: 10px; 
-            background: #dc3545; 
-            color: white; 
-            border: none; 
-            border-radius: 8px; 
-            font-size: 14px; 
-            font-weight: bold; 
-            cursor: pointer; 
-            margin-top: 8px; 
-        }
+        button.clear-btn { width: 100%; padding: 10px; background: #dc3545; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 8px; }
         button.clear-btn:active { background: #bd2130; }
         
         .history-list { width: 100%; max-width: 400px; margin-top: 20px; }
-        .item { 
-            background: white; 
-            padding: 15px; 
-            border-radius: 10px; 
-            margin-bottom: 15px; 
-            position: relative; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
-            text-align: center; 
-            cursor: pointer; 
-            transition: background 0.2s; 
-            border: 2px solid transparent; 
-        }
+        .item { background: white; padding: 15px; border-radius: 10px; margin-bottom: 15px; position: relative; box-shadow: 0 2px 5px rgba(0,0,0,0.05); text-align: center; cursor: pointer; transition: background 0.2s; border: 2px solid transparent; }
         .item:active { background: #f8f9fa; border-color: #007bff; }
         
-        .item-info { 
-            text-align: left; 
-            border-bottom: 1px dashed #eee; 
-            margin-bottom: 10px; 
-            padding-bottom: 8px; 
-            padding-right: 30px; 
-            display: flex; 
-            flex-direction: column; 
-            gap: 4px; 
-        }
+        .item-info { text-align: left; border-bottom: 1px dashed #eee; margin-bottom: 10px; padding-bottom: 8px; padding-right: 30px; display: flex; flex-direction: column; gap: 5px; }
         
-        .header-row { display: flex; justify-content: space-between; align-items: center; }
-        .serial-badge { 
-            background: #007bff; 
-            color: white; 
-            padding: 2px 8px; 
-            border-radius: 4px; 
-            font-size: 12px; 
-            font-weight: bold; 
-        }
-        .source-badge {
-            background: #6c757d;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: bold;
-        }
+        .serial-badge { display: inline-block; background: #007bff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-right: 6px; vertical-align: middle; }
         
-        .item-phone { color: #333; font-family: monospace; font-size: 18px; font-weight: bold; margin-top: 2px; }
-        .scan-progress { font-size: 12px; color: #e65100; font-weight: bold; }
+        .item-note { font-weight: bold; color: #333; font-size: 16px; }
+        .item-phone { color: #007bff; font-family: monospace; font-size: 16px; font-weight: bold; }
+        .scan-progress { font-size: 12px; color: #e65100; font-weight: bold; margin-top: 2px; }
         
-        .btn-del { 
-            position: absolute; 
-            right: 10px; 
-            top: 15px; 
-            color: #dc3545; 
-            border: none; 
-            background: #ffe1e1; 
-            border-radius: 50%; 
-            width: 28px; 
-            height: 28px; 
-            font-size: 16px; 
-            cursor: pointer; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            z-index: 2; 
-        }
+        .btn-del { position: absolute; right: 10px; top: 15px; color: #dc3545; border: none; background: #ffe1e1; border-radius: 50%; width: 28px; height: 28px; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2; }
         
+        /* 确保二维码容器样式正确 */
         .qr-box { display: flex; justify-content: center; margin-top: 10px; }
-        .qr-box img, .qr-box canvas { 
-            padding: 5px; 
-            background: #fff; 
-            border: 1px solid #eee; 
-            display: block; 
-            border-radius: 6px;
-        }
+        .qr-box img, .qr-box canvas { padding: 5px; background: #fff; border: 1px solid #eee; display: block; }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h2>会员码生成 (剪贴板秒贴版)</h2>
+        <h2>会员二维码生成 (自动消减版)</h2>
         
-        <!-- 核心：一键读取剪贴板按钮 -->
-        <button class="paste-btn" onclick="pasteFromClipboard()">📋 一键读取剪贴板并生成</button>
+        <!-- 新增：一键读取剪贴板按钮 -->
+        <button class="paste-btn" onclick="pasteFromClipboard()">📋 一键读取剪贴板内容</button>
 
-        <div style="margin: 12px 0 4px 0; border-top: 1px dashed #eee; padding-top: 8px;">
-            <label style="font-size: 12px; font-weight: bold; color: #666;">或手动输入/批量粘贴：</label>
-        </div>
-        
-        <select id="m-source">
-            <option value="默认来源">默认来源</option>
-            <option value="抖音团购">抖音团购</option>
-            <option value="美团团购">美团团购</option>
-            <option value="微信小程序">微信小程序</option>
-            <option value="线下门店">线下门店</option>
-        </select>
-
-        <textarea id="m-input" placeholder="支持多行粘贴，例如：&#10;13800000001&#10;13800000002"></textarea>
-        
-        <button class="add-btn" onclick="saveAndRender()">手动确认生成</button>
-        <button class="clear-btn" onclick="clearAllItems()">一键清除所有记录</button>
+        <textarea id="phone" placeholder="输入会员手机号，多个号码请换行&#10;例如：&#10;13800000001&#10;13800000002"></textarea>
+        <input type="text" id="note" placeholder="统一备注 (选填，如：VIP批次)">
+        <button class="add-btn" onclick="saveAndRender()">生成并保存</button>
+        <button class="clear-btn" onclick="clearAllItems()">一键清除所有会员</button>
     </div>
 
     <div id="list" class="history-list"></div>
@@ -194,7 +62,7 @@
     <script>
         window.onload = renderList;
 
-        // 核心功能：调用剪贴板 API 自动读取刚复制的内容
+        // 新增：读取剪贴板并填入输入框的函数
         async function pasteFromClipboard() {
             try {
                 if (!navigator.clipboard || !navigator.clipboard.readText) {
@@ -202,101 +70,90 @@
                     return;
                 }
                 let text = await navigator.clipboard.readText();
-                text = text.trim();
-                if (!text) {
-                    alert("剪贴板为空！请先在App中复制号码。");
+                if (!text.trim()) {
+                    alert("剪贴板内容为空！");
                     return;
                 }
-
-                // 将读取到的内容直接填入输入框并自动触发生成
-                document.getElementById('m-input').value = text;
-                saveAndRender();
+                document.getElementById('phone').value = text.trim();
             } catch (err) {
                 console.error("读取剪贴板失败: ", err);
-                alert("读取剪贴板权限被拒绝，请点击输入框后手动长按粘贴。");
+                alert("读取剪贴板权限被拒绝，请长按输入框手动粘贴。");
             }
         }
 
         function saveAndRender() {
-            let inputText = document.getElementById('m-input').value.trim();
-            let defaultSource = document.getElementById('m-source').value;
+            let phoneText = document.getElementById('phone').value;
+            let note = document.getElementById('note').value || "未备注";
 
-            if (!inputText) {
-                alert("请输入或粘贴会员号码！");
+            if (!phoneText.trim()) {
+                alert("请输入至少一个会员号");
                 return;
             }
 
-            let lines = inputText.split('\n').map(l => l.trim()).filter(l => l !== "");
-            let history = JSON.parse(localStorage.getItem('my_qr_clipboard_list') || '[]');
+            let phoneArray = phoneText.split('\n').map(p => p.trim()).filter(p => p !== "");
+            let history = JSON.parse(localStorage.getItem('my_qr_list_auto') || '[]');
             let maxSerial = history.reduce((max, item) => Math.max(max, item.serial || 0), 0);
 
             let newItems = [];
-            lines.forEach((line, index) => {
+            phoneArray.forEach((phone, index) => {
                 maxSerial++;
-                let source = defaultSource;
-                let phone = line;
-
-                // 智能识别：若行内包含空格或连字符，尝试分离来源和号码
-                let parts = line.split(/[\s\-]+/);
-                if (parts.length >= 2) {
-                    source = parts[0];
-                    phone = parts.slice(1).join('');
-                }
-
                 newItems.push({
                     id: Date.now() + index,
                     serial: maxSerial,
-                    source: source,
                     content: phone,
-                    scanCount: 0
+                    note: note,
+                    scanCount: 0 // 初始化扫码次数为0
                 });
             });
 
             history = newItems.concat(history);
-            localStorage.setItem('my_qr_clipboard_list', JSON.stringify(history));
+            localStorage.setItem('my_qr_list_auto', JSON.stringify(history));
 
-            document.getElementById('m-input').value = "";
+            document.getElementById('phone').value = "";
+            document.getElementById('note').value = "";
             renderList();
         }
 
-        // 点击卡片自动累加次数，满 5 次自动移除
+        // 点击卡片任意位置（除删除按钮外）自动累加次数，满5次自动消失
         function handleCardClick(id, event) {
+            // 如果点的是右上角的删除叉号，则不触发计数，走删除逻辑
             if (event.target.classList.contains('btn-del')) return;
 
-            let history = JSON.parse(localStorage.getItem('my_qr_clipboard_list') || '[]');
+            let history = JSON.parse(localStorage.getItem('my_qr_list_auto') || '[]');
             let item = history.find(x => x.id === id);
             if (item) {
                 item.scanCount = (item.scanCount || 0) + 1;
                 if (item.scanCount >= 5) {
+                    // 满5次自动从数组中过滤掉
                     history = history.filter(x => x.id !== id);
                 }
-                localStorage.setItem('my_qr_clipboard_list', JSON.stringify(history));
+                localStorage.setItem('my_qr_list_auto', JSON.stringify(history));
                 renderList();
             }
         }
 
         function deleteItem(id) {
-            let history = JSON.parse(localStorage.getItem('my_qr_clipboard_list') || '[]');
+            let history = JSON.parse(localStorage.getItem('my_qr_list_auto') || '[]');
             history = history.filter(item => item.id !== id);
-            localStorage.setItem('my_qr_clipboard_list', JSON.stringify(history));
+            localStorage.setItem('my_qr_list_auto', JSON.stringify(history));
             renderList();
         }
 
         function clearAllItems() {
-            let history = JSON.parse(localStorage.getItem('my_qr_clipboard_list') || '[]');
+            let history = JSON.parse(localStorage.getItem('my_qr_list_auto') || '[]');
             if (history.length === 0) {
-                alert("当前没有保存任何记录！");
+                alert("当前没有保存任何会员数据！");
                 return;
             }
             
-            if (confirm("确定要清空所有记录吗？")) {
-                localStorage.removeItem('my_qr_clipboard_list');
+            if (confirm("确定要清空所有的会员二维码记录吗？此操作无法撤销！")) {
+                localStorage.removeItem('my_qr_list_auto');
                 renderList();
             }
         }
 
         function renderList() {
-            let history = JSON.parse(localStorage.getItem('my_qr_clipboard_list') || '[]');
+            let history = JSON.parse(localStorage.getItem('my_qr_list_auto') || '[]');
             let listDiv = document.getElementById('list');
             listDiv.innerHTML = ""; 
 
@@ -306,17 +163,18 @@
                 let qrId = "qr-" + item.id;
                 let currentCount = item.scanCount || 0;
                 
+                // 绑定点击卡片事件
                 div.onclick = (e) => handleCardClick(item.id, e);
 
                 div.innerHTML = `
                     <button class="btn-del" onclick="deleteItem(${item.id})">×</button>
                     <div class="item-info">
-                        <div class="header-row">
+                        <div>
                             <span class="serial-badge">NO.${item.serial}</span>
-                            <span class="source-badge">${item.source}</span>
+                            <span class="item-note">${item.note}</span>
                         </div>
                         <div class="item-phone">${item.content}</div>
-                        <div class="scan-progress">🔄 已扫次数: ${currentCount} / 5 （点击卡片计数）</div>
+                        <div class="scan-progress">🔄 已扫次数: ${currentCount} / 5 （点击卡片算作扫码一次）</div>
                     </div>
                     <div class="qr-box" id="${qrId}"></div>
                 `;
