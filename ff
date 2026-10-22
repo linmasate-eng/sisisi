@@ -39,6 +39,7 @@ class MainActivity : Activity() {
     
     private lateinit var status: TextView
     private lateinit var autoEnter: CheckBox
+    private lateinit var rootLayout: LinearLayout // 根布局，用于自定义背景
 
     private lateinit var page1Layout: LinearLayout
     private lateinit var page2Layout: LinearLayout
@@ -54,10 +55,13 @@ class MainActivity : Activity() {
     private lateinit var skuInput: EditText
     private lateinit var weightOrPriceInput: EditText
     private lateinit var unitInput: EditText
+    private lateinit var discountInput: EditText // 折扣输入 (如 9.5 代表95折)
     private lateinit var barNoteInput: EditText
     private lateinit var barListLayout: LinearLayout
 
-    private val prefs by lazy { getSharedPreferences("barcode_all_prefs", Context.MODE_PRIVATE) }
+    private lateinit var bgInput: EditText // 自定义背景色/主题色输入
+
+    private val prefs by lazy { getSharedPreferences("barcode_anime_prefs", Context.MODE_PRIVATE) }
 
     private val reportDescriptor = byteArrayOf(
         0x05.toByte(), 0x01.toByte(), 0x09.toByte(), 0x06.toByte(), 0xA1.toByte(), 0x01.toByte(), 0x85.toByte(), 0x01.toByte(),
@@ -73,14 +77,14 @@ class MainActivity : Activity() {
     private val callback = object : BluetoothHidDevice.Callback() {
         override fun onAppStatusChanged(device: BluetoothDevice?, plugged: Boolean) {
             registered = plugged
-            mainHandler.post { status.text = if (plugged) "🟢 蓝牙 HID 已注册，请在收银机连接" else "🔴 蓝牙 HID 未注册" }
+            mainHandler.post { status.text = if (plugged) "✨ 蓝牙 HID 已注册，请在收银机连接" else "💧 蓝牙 HID 未注册" }
         }
         override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
             if (state == BluetoothProfile.STATE_CONNECTED) {
                 target = device
-                mainHandler.post { status.text = "🟢 已连接主机: " + safeName(device) }
+                mainHandler.post { status.text = "⭐ 已连接收银机: " + safeName(device) }
             } else if (device == target && state == BluetoothProfile.STATE_DISCONNECTED) {
-                mainHandler.post { status.text = "🟡 蓝牙键盘已断开" }
+                mainHandler.post { status.text = "💤 蓝牙键盘已断开" }
                 target = null
             }
         }
@@ -92,12 +96,12 @@ class MainActivity : Activity() {
         buildUi()
         val btAdapter = BluetoothAdapter.getDefaultAdapter()
         adapter = btAdapter
-        if (btAdapter == null) status.text = "设备没有蓝牙适配器"
+        if (btAdapter == null) status.text = "设备不支持蓝牙"
         else status.text = "请先初始化蓝牙并选择收银机"
     }
 
-    // 辅助样式：生成圆角矩形背景
-    private fun createRoundedBg(colorStr: String, radius: Float = 16f): GradientDrawable {
+    // 二次元动漫风圆角生成器 (默认粉紫梦幻渐变)
+    private fun createAnimeCardBg(colorStr: String = "#FFFFFF", radius: Float = 20f): GradientDrawable {
         return GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = radius
@@ -106,46 +110,83 @@ class MainActivity : Activity() {
     }
 
     private fun buildUi() {
-        // 整体背景设为浅灰色 (#F4F6F9)
-        val root = LinearLayout(this).apply {
+        // 默认动漫风背景色 (深紫罗兰/夜空动漫感 #1E1B4B 或可选自定义)
+        val savedBg = prefs.getString("custom_bg_color", "#1E1B4B") ?: "#1E1B4B"
+
+        rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 20, 20, 20)
-            setBackgroundColor(Color.parseColor("#F4F6F9"))
+            setPadding(16, 16, 16, 16)
+            setBackgroundColor(Color.parseColor(savedBg))
         }
 
         val title = TextView(this).apply { 
-            text = "⚡ 蓝牙发码双模助手"
+            text = "🌸 动漫风蓝牙发码双模助手 🌸"
             textSize = 20f 
             setTypeface(null, android.graphics.Typeface.BOLD)
-            setTextColor(Color.parseColor("#1E293B"))
+            setTextColor(Color.parseColor("#F472B6")) // 动漫粉
             gravity = Gravity.CENTER 
-            setPadding(0, 10, 0, 5)
+            setPadding(0, 8, 0, 4)
         }
         
         status = TextView(this).apply { 
             textSize = 13f 
-            setTextColor(Color.parseColor("#64748B"))
+            setTextColor(Color.parseColor("#E2E8F0"))
             gravity = Gravity.CENTER 
-            setPadding(0, 0, 0, 12)
+            setPadding(0, 0, 0, 8)
         }
 
-        // 蓝牙操作栏卡片
+        // 自定义背景切换栏 (支持输入颜色代码如 #2E1065 切换背景)
+        val bgBox = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(12, 8, 12, 8)
+            background = createAnimeCardBg("#312E81", 16f)
+        }
+        bgInput = EditText(this).apply {
+            hint = "输入背景色(如 #1A103C)"
+            setText(savedBg)
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#94A3B8"))
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 2f)
+        }
+        val bgBtn = Button(this).apply {
+            text = "更换背景"
+            textSize = 12f
+            background = createAnimeCardBg("#EC4899", 12f)
+            setTextColor(Color.WHITE)
+            setOnClickListener {
+                val newColor = bgInput.text.toString().trim()
+                try {
+                    rootLayout.setBackgroundColor(Color.parseColor(newColor))
+                    prefs.edit().putString("custom_bg_color", newColor).apply()
+                    Toast.makeText(this@MainActivity, "背景已更新！", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {
+                    Toast.makeText(this@MainActivity, "颜色格式错误，请用 #xxxxxx", Toast.LENGTH_SHORT).show()
+                }
+            }
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(10,0,0,0) }
+        }
+        bgBox.addView(bgInput)
+        bgBox.addView(bgBtn)
+
+        // 蓝牙控制栏
         val btBar = LinearLayout(this).apply { 
             orientation = LinearLayout.HORIZONTAL
             weightSum = 2f
-            setPadding(12, 12, 12, 12)
-            background = createRoundedBg("#FFFFFF")
+            setPadding(10, 10, 10, 10)
+            background = createAnimeCardBg("#312E81", 16f)
+            setMarginsTop(8)
         }
         val initBtn = Button(this).apply {
             text = "初始化蓝牙"
-            background = createRoundedBg("#0284C7", 12f)
+            background = createAnimeCardBg("#8B5CF6", 14f)
             setTextColor(Color.WHITE)
             setOnClickListener { initHid() }
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) }
         }
         val connectBtn = Button(this).apply {
             text = "选择收银机"
-            background = createRoundedBg("#0D9488", 12f)
+            background = createAnimeCardBg("#06B6D4", 14f)
             setTextColor(Color.WHITE)
             setOnClickListener { choosePairedHost() }
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(4,0,4,0) }
@@ -154,27 +195,27 @@ class MainActivity : Activity() {
         btBar.addView(connectBtn)
 
         autoEnter = CheckBox(this).apply { 
-            text = " 发送后自动回车 (建议勾选)"
+            text = " 发送后自动回车"
             isChecked = true
-            setTextColor(Color.parseColor("#334155"))
-            setPadding(0, 12, 0, 8)
+            setTextColor(Color.parseColor("#F1F5F9"))
+            setPadding(0, 8, 0, 4)
         }
 
-        // 顶部选项卡切换
-        val tabLayout = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; weightSum = 2f; setPadding(0, 4, 0, 12) }
+        // 标签切换
+        val tabLayout = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; weightSum = 2f; setPadding(0, 4, 0, 8) }
         tabBtn1 = Button(this).apply {
-            text = "📄 会员号批量发码"
-            background = createRoundedBg("#2563EB")
+            text = "📄 页面1: 会员号(5次消减)"
+            background = createAnimeCardBg("#EC4899", 16f)
             setTextColor(Color.WHITE)
             setOnClickListener { switchPage(1) }
-            layoutParams = LinearLayout.LayoutParams(0, 110, 1f).apply { setMargins(0,0,6,0) }
+            layoutParams = LinearLayout.LayoutParams(0, 100, 1f).apply { setMargins(0,0,6,0) }
         }
         tabBtn2 = Button(this).apply {
-            text = "🏷️ 7系条码助手"
-            background = createRoundedBg("#94A3B8")
+            text = "🏷️ 页面2: 7系条码(含反推/折扣)"
+            background = createAnimeCardBg("#475569", 16f)
             setTextColor(Color.WHITE)
             setOnClickListener { switchPage(2) }
-            layoutParams = LinearLayout.LayoutParams(0, 110, 1f).apply { setMargins(6,0,0,0) }
+            layoutParams = LinearLayout.LayoutParams(0, 100, 1f).apply { setMargins(6,0,0,0) }
         }
         tabLayout.addView(tabBtn1)
         tabLayout.addView(tabBtn2)
@@ -183,58 +224,58 @@ class MainActivity : Activity() {
         page1Layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.VISIBLE
-            background = createRoundedBg("#FFFFFF")
+            background = createAnimeCardBg("#FFFFFF", 24f)
             setPadding(16, 16, 16, 16)
         }
         batchNoteInput = EditText(this).apply { 
-            hint = "统一备注 (选填，如: VIP批次)"
-            setPadding(24, 24, 24, 24)
-            background = createRoundedBg("#F8FAFC", 12f)
-            setTextColor(Color.parseColor("#0F172A"))
+            hint = "统一备注 (如: VIP批次)"
+            setPadding(20, 20, 20, 20)
+            background = createAnimeCardBg("#F1F5F9", 12f)
+            setTextColor(Color.BLACK)
         }
         batchInput = EditText(this).apply {
             hint = "输入纯数字，多行换行批量生成\n88001\n88002"
             minLines = 3; maxLines = 5; gravity = Gravity.TOP
-            setPadding(24, 24, 24, 24)
-            background = createRoundedBg("#F8FAFC", 12f)
-            setTextColor(Color.parseColor("#0F172A"))
-            setMarginsTop(12)
+            setPadding(20, 20, 20, 20)
+            background = createAnimeCardBg("#F1F5F9", 12f)
+            setTextColor(Color.BLACK)
+            setMarginsTop(10)
         }
         val batchGenBtn = Button(this).apply {
             text = "✨ 批量生成会员号"
-            background = createRoundedBg("#16A34A", 12f)
+            background = createAnimeCardBg("#EC4899", 14f)
             setTextColor(Color.WHITE)
             setOnClickListener { addBatchMembers() }
-            setMarginsTop(12)
+            setMarginsTop(10)
         }
         val batchClearBtn = Button(this).apply {
-            text = "清空所有会员号"
-            background = createRoundedBg("#EF4444", 12f)
+            text = "清空会员号"
+            background = createAnimeCardBg("#EF4444", 14f)
             setTextColor(Color.WHITE)
             setOnClickListener { clearBatchCodes() }
-            setMarginsTop(8)
+            setMarginsTop(6)
         }
         batchListLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll1 = ScrollView(this).apply { addView(batchListLayout); setMarginsTop(12) }
+        val scroll1 = ScrollView(this).apply { addView(batchListLayout); setMarginsTop(10) }
 
         page1Layout.addView(batchNoteInput)
         page1Layout.addView(batchInput)
         page1Layout.addView(batchGenBtn)
         page1Layout.addView(batchClearBtn)
-        page1Layout.addView(TextView(this).apply { text = "👇 会员发码列表 (点击发送，满5次自动删除):"; textSize = 13f; setTextColor(Color.parseColor("#475569")); setPadding(0, 12, 0, 4) })
+        page1Layout.addView(TextView(this).apply { text = "👇 会员号列表 (点击发码，满5次自动消失):"; textSize = 13f; setTextColor(Color.parseColor("#475569")); setPadding(0, 10, 0, 4) })
         val p1Params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0).apply { weight = 1f }
         page1Layout.addView(scroll1, p1Params)
 
-        // ==================== 页面2 布局 (7系条码) ====================
+        // ==================== 页面2 布局 (7系条码 + 折扣功能) ====================
         page2Layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
-            background = createRoundedBg("#FFFFFF")
+            background = createAnimeCardBg("#FFFFFF", 24f)
             setPadding(16, 16, 16, 16)
         }
         modeToggleBtn = Button(this).apply {
-            text = "当前模式：【按重量生成】(点击切换)"
-            background = createRoundedBg("#16A34A", 12f)
+            text = "当前模式：【按重量生成】(点击切换价格反推)"
+            background = createAnimeCardBg("#8B5CF6", 14f)
             setTextColor(Color.WHITE)
             setOnClickListener {
                 isPriceMode = !isPriceMode
@@ -243,66 +284,75 @@ class MainActivity : Activity() {
         }
         skuInput = EditText(this).apply { 
             hint = "货号 (如: 16)"
-            setPadding(24, 24, 24, 24)
-            background = createRoundedBg("#F8FAFC", 12f)
-            setMarginsTop(10)
+            setPadding(18, 18, 18, 18)
+            background = createAnimeCardBg("#F1F5F9", 12f)
+            setMarginsTop(8)
             setOnFocusChangeListener { _, hasFocus ->
                 if (!hasFocus && isPriceMode) autoFillUnitPrice()
             }
         }
         weightOrPriceInput = EditText(this).apply { 
             hint = "重量 (kg)，如: 0.525"
-            setPadding(24, 24, 24, 24)
-            background = createRoundedBg("#F8FAFC", 12f)
-            setMarginsTop(10)
+            setPadding(18, 18, 18, 18)
+            background = createAnimeCardBg("#F1F5F9", 12f)
+            setMarginsTop(8)
         }
         unitInput = EditText(this).apply { 
             hint = "单价 (元/kg)"
-            setPadding(24, 24, 24, 24)
-            background = createRoundedBg("#F8FAFC", 12f)
+            setPadding(18, 18, 18, 18)
+            background = createAnimeCardBg("#F1F5F9", 12f)
             visibility = View.GONE
-            setMarginsTop(10)
+            setMarginsTop(8)
+        }
+        discountInput = EditText(this).apply { 
+            hint = "折扣 (选填，如 9.5 代表95折)"
+            setPadding(18, 18, 18, 18)
+            background = createAnimeCardBg("#F1F5F9", 12f)
+            visibility = View.GONE
+            setMarginsTop(8)
         }
         barNoteInput = EditText(this).apply { 
             hint = "备注 (如: 青瓜)"
-            setPadding(24, 24, 24, 24)
-            background = createRoundedBg("#F8FAFC", 12f)
-            setMarginsTop(10)
+            setPadding(18, 18, 18, 18)
+            background = createAnimeCardBg("#F1F5F9", 12f)
+            setMarginsTop(8)
         }
 
         val barGenBtn = Button(this).apply {
-            text = "✨ 生成7系条码"
-            background = createRoundedBg("#0891B2", 12f)
+            text = "✨ 生成7系条码 (支持折扣)"
+            background = createAnimeCardBg("#06B6D4", 14f)
             setTextColor(Color.WHITE)
             setOnClickListener { generate7SeriesCode() }
-            setMarginsTop(12)
+            setMarginsTop(10)
         }
         val barClearBtn = Button(this).apply {
-            text = "清空所有7系条码"
-            background = createRoundedBg("#EF4444", 12f)
+            text = "清空7系条码"
+            background = createAnimeCardBg("#EF4444", 14f)
             setTextColor(Color.WHITE)
             setOnClickListener { clear7SeriesCodes() }
-            setMarginsTop(8)
+            setMarginsTop(6)
         }
         barListLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll2 = ScrollView(this).apply { addView(barListLayout); setMarginsTop(12) }
+        val scroll2 = ScrollView(this).apply { addView(barListLayout); setMarginsTop(10) }
 
         page2Layout.addView(modeToggleBtn)
         page2Layout.addView(skuInput)
         page2Layout.addView(weightOrPriceInput)
         page2Layout.addView(unitInput)
+        page2Layout.addView(discountInput)
         page2Layout.addView(barNoteInput)
         page2Layout.addView(barGenBtn)
         page2Layout.addView(barClearBtn)
-        page2Layout.addView(TextView(this).apply { text = "👇 7系条码列表 (点击直接发码，可无限次使用):"; textSize = 13f; setTextColor(Color.parseColor("#475569")); setPadding(0, 12, 0, 4) })
+        page2Layout.addView(TextView(this).apply { text = "👇 7系条码列表 (支持反推、随时修改折扣与折后公斤):"; textSize = 13f; setTextColor(Color.parseColor("#475569")); setPadding(0, 10, 0, 4) })
         val p2Params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0).apply { weight = 1f }
         page2Layout.addView(scroll2, p2Params)
 
-        root.addView(title)
-        root.addView(status)
-        root.addView(btBar)
-        root.addView(autoEnter)
-        root.addView(tabLayout)
+        rootLayout.addView(title)
+        rootLayout.addView(status)
+        rootLayout.addView(bgBox)
+        rootLayout.addView(btBar)
+        rootLayout.addView(autoEnter)
+        rootLayout.addView(tabLayout)
         
         val containerParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0).apply { weight = 1f }
         val container = LinearLayout(this).apply {
@@ -310,9 +360,9 @@ class MainActivity : Activity() {
             addView(page1Layout, containerParams)
             addView(page2Layout, containerParams)
         }
-        root.addView(container, containerParams)
+        rootLayout.addView(container, containerParams)
 
-        setContentView(root)
+        setContentView(rootLayout)
         renderBatchList()
         renderBarList()
     }
@@ -327,27 +377,29 @@ class MainActivity : Activity() {
         if (page == 1) {
             page1Layout.visibility = View.VISIBLE
             page2Layout.visibility = View.GONE
-            tabBtn1.background = createRoundedBg("#2563EB")
-            tabBtn2.background = createRoundedBg("#94A3B8")
+            tabBtn1.background = createAnimeCardBg("#EC4899", 16f)
+            tabBtn2.background = createAnimeCardBg("#475569", 16f)
         } else {
             page1Layout.visibility = View.GONE
             page2Layout.visibility = View.VISIBLE
-            tabBtn1.background = createRoundedBg("#94A3B8")
-            tabBtn2.background = createRoundedBg("#2563EB")
+            tabBtn1.background = createAnimeCardBg("#475569", 16f)
+            tabBtn2.background = createAnimeCardBg("#EC4899", 16f)
         }
     }
 
     private fun updateBarcodeModeUi() {
         if (isPriceMode) {
-            modeToggleBtn.text = "当前模式：【按价格反推】(点击切换)"
-            modeToggleBtn.background = createRoundedBg("#0891B2", 12f)
+            modeToggleBtn.text = "当前模式：【按价格反推】(点击切换回重量)"
+            modeToggleBtn.background = createAnimeCardBg("#06B6D4", 14f)
             weightOrPriceInput.hint = "总价 (元)，如: 12.5"
             unitInput.visibility = View.VISIBLE
+            discountInput.visibility = View.VISIBLE
         } else {
-            modeToggleBtn.text = "当前模式：【按重量生成】(点击切换)"
-            modeToggleBtn.background = createRoundedBg("#16A34A", 12f)
+            modeToggleBtn.text = "当前模式：【按重量生成】(点击切换价格反推)"
+            modeToggleBtn.background = createAnimeCardBg("#8B5CF6", 14f)
             weightOrPriceInput.hint = "重量 (kg)，如: 0.525"
             unitInput.visibility = View.GONE
+            discountInput.visibility = View.GONE
         }
     }
 
@@ -366,9 +418,7 @@ class MainActivity : Activity() {
     private fun addBatchMembers() {
         val raw = batchInput.text.toString().trim()
         val note = batchNoteInput.text.toString().trim().ifBlank { "默认批次" }
-        if (raw.isEmpty()) {
-            Toast.makeText(this, "请输入数字", Toast.LENGTH_SHORT).show(); return
-        }
+        if (raw.isEmpty()) { Toast.makeText(this, "请输入数字", Toast.LENGTH_SHORT).show(); return }
         val lines = raw.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
         val history = loadJson("batch_members")
         var maxS = 0
@@ -407,14 +457,14 @@ class MainActivity : Activity() {
             val note = obj.optString("note")
             val count = obj.optInt("clickCount", 0)
 
-            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 6, 0, 6) }
+            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 4, 0, 4) }
             val btn = Button(this).apply {
-                text = "NO.$serial [$note]  ➜  $content  (已用: $count / 5)"
+                text = "NO.$serial [$note] ➔ $content  (已用: $count / 5)"
                 textSize = 14f
                 setTextColor(Color.parseColor("#1E293B"))
-                background = createRoundedBg("#F1F5F9", 12f)
+                background = createAnimeCardBg("#F8FAFC", 14f)
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                setPadding(24, 20, 24, 20)
+                setPadding(20, 16, 20, 16)
                 setOnClickListener {
                     if (checkReady()) {
                         sendText(content + if (autoEnter.isChecked) "\n" else "")
@@ -445,9 +495,8 @@ class MainActivity : Activity() {
         val skuStr = skuInput.text.toString().trim()
         val valStr = weightOrPriceInput.text.toString().trim()
         val note = barNoteInput.text.toString().trim().ifBlank { "未命名" }
-        if (skuStr.isEmpty() || valStr.isEmpty()) {
-            Toast.makeText(this, "请填写完整", Toast.LENGTH_SHORT).show(); return
-        }
+        if (skuStr.isEmpty() || valStr.isEmpty()) { Toast.makeText(this, "请填写完整", Toast.LENGTH_SHORT).show(); return }
+        
         val sku = skuStr.padStart(6, '0')
         var grams = 0
         var subDesc = ""
@@ -459,9 +508,19 @@ class MainActivity : Activity() {
         } else {
             val u = unitInput.text.toString().toDoubleOrNull() ?: 0.0
             val t = valStr.toDoubleOrNull() ?: 0.0
+            val disc = discountInput.text.toString().toDoubleOrNull() ?: 10.0 // 默认不打折
             if (u <= 0) { Toast.makeText(this, "请填写有效单价", Toast.LENGTH_SHORT).show(); return }
-            grams = Math.round((t / u) * 1000).toInt()
-            subDesc = "总价: ${t}元 (约${String.format("%.3f", grams / 1000.0)}kg)"
+            
+            // 折扣计算：折后总价 = 总价 * (折扣 / 10)
+            val finalTotal = t * (disc / 10.0)
+            grams = Math.round((finalTotal / u) * 1000).toInt()
+            
+            subDesc = if (disc < 10.0) {
+                "原价:${t}元 [${disc}折] ➔ 折后:${String.format("%.2f", finalTotal)}元 (约${String.format("%.3f", grams / 1000.0)}kg)"
+            } else {
+                "总价: ${t}元 (约${String.format("%.3f", grams / 1000.0)}kg)"
+            }
+
             try {
                 val map = JSONObject(prefs.getString("sku_price_map", "{}"))
                 map.put(sku, u.toString())
@@ -488,8 +547,9 @@ class MainActivity : Activity() {
         for (i in 0 until history.length()) newArr.put(history.get(i))
         saveJson("series7_codes", newArr)
         weightOrPriceInput.setText("")
+        discountInput.setText("")
         renderBarList()
-        Toast.makeText(this, "7系条码生成成功", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "7系条码生成成功！", Toast.LENGTH_SHORT).show()
     }
 
     private fun renderBarList() {
@@ -507,15 +567,15 @@ class MainActivity : Activity() {
             val row = LinearLayout(this).apply { 
                 orientation = LinearLayout.HORIZONTAL
                 weightSum = 5f
-                setPadding(0, 6, 0, 6) 
+                setPadding(0, 4, 0, 4) 
             }
             val btn = Button(this).apply {
                 text = "NO.$serial [$note] $sub\n条码: $code"
                 textSize = 13f
                 setTextColor(Color.parseColor("#0F172A"))
-                background = createRoundedBg("#F8FAFC", 12f)
+                background = createAnimeCardBg("#F8FAFC", 14f)
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                setPadding(20, 16, 20, 16)
+                setPadding(16, 14, 16, 14)
                 setOnClickListener {
                     if (checkReady()) {
                         sendText(code + if (autoEnter.isChecked) "\n" else "")
@@ -528,7 +588,7 @@ class MainActivity : Activity() {
                 text = "删"
                 textSize = 12f
                 setTextColor(Color.parseColor("#EF4444"))
-                background = createRoundedBg("#FEE2E2", 12f)
+                background = createAnimeCardBg("#FEE2E2", 14f)
                 setOnClickListener { removeItem("series7_codes", id, ::renderBarList) }
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
@@ -580,12 +640,8 @@ class MainActivity : Activity() {
     }
 
     private fun checkReady(): Boolean {
-        if (!registered || hid == null) {
-            Toast.makeText(this, "请先初始化蓝牙", Toast.LENGTH_SHORT).show(); return false
-        }
-        if (target == null) {
-            Toast.makeText(this, "请先选择收银机", Toast.LENGTH_SHORT).show(); return false
-        }
+        if (!registered || hid == null) { Toast.makeText(this, "请先初始化蓝牙", Toast.LENGTH_SHORT).show(); return false }
+        if (target == null) { Toast.makeText(this, "请先选择收银机", Toast.LENGTH_SHORT).show(); return false }
         return true
     }
 
@@ -607,7 +663,7 @@ class MainActivity : Activity() {
                 hid = proxy as BluetoothHidDevice
                 val sdp = BluetoothHidDeviceAppSdpSettings("Keyboard", "Desc", "Prov", BluetoothHidDevice.SUBCLASS1_KEYBOARD, reportDescriptor)
                 val ok = hid?.registerApp(sdp, null, null, executor, callback) ?: false
-                mainHandler.post { status.text = if (ok) "🟢 HID 注册请求已提交" else "🔴 注册失败" }
+                mainHandler.post { status.text = if (ok) "✨ HID 注册请求已提交" else "💧 注册失败" }
             }
             override fun onServiceDisconnected(profile: Int) { hid = null; registered = false }
         }, BluetoothProfile.HID_DEVICE)
@@ -622,7 +678,7 @@ class MainActivity : Activity() {
             .setTitle("选择收银机")
             .setItems(labels) { _, which ->
                 target = devices[which]
-                status.text = "🟢 已连接: ${safeName(target)}"
+                status.text = "⭐ 已连接: ${safeName(target)}"
             }.setNegativeButton("取消", null).show()
     }
 
