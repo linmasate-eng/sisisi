@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
@@ -35,11 +36,29 @@ class MainActivity : Activity() {
     private var target: BluetoothDevice? = null
     
     private lateinit var status: TextView
-    private lateinit var list: LinearLayout
     private lateinit var autoEnter: CheckBox
-    private lateinit var nameInput: EditText
-    private lateinit var codeInput: EditText // 改为多行输入支持批量粘贴
-    private val prefs by lazy { getSharedPreferences("saved_codes_auto", Context.MODE_PRIVATE) }
+
+    // 页面容器
+    private lateinit var page1Layout: LinearLayout
+    private lateinit var page2Layout: LinearLayout
+    private lateinit var tabBtn1: Button
+    private lateinit var tabBtn2: Button
+
+    // 页面1控件 (会员号批量发码，带点5次消失)
+    private lateinit var batchInput: EditText
+    private lateinit var batchNoteInput: EditText
+    private lateinit var batchListLayout: LinearLayout
+
+    // 页面2控件 (7系条码助手，无次数限制)
+    private lateinit var modeToggleBtn: Button
+    private var isPriceMode = false
+    private lateinit var skuInput: EditText
+    private lateinit var weightOrPriceInput: EditText
+    private lateinit var unitInput: EditText
+    private lateinit var barNoteInput: EditText
+    private lateinit var barListLayout: LinearLayout
+
+    private val prefs by lazy { getSharedPreferences("barcode_all_prefs", Context.MODE_PRIVATE) }
 
     private val reportDescriptor = byteArrayOf(
         0x05.toByte(), 0x01.toByte(), 0x09.toByte(), 0x06.toByte(), 0xA1.toByte(), 0x01.toByte(), 0x85.toByte(), 0x01.toByte(),
@@ -55,12 +74,12 @@ class MainActivity : Activity() {
     private val callback = object : BluetoothHidDevice.Callback() {
         override fun onAppStatusChanged(device: BluetoothDevice?, plugged: Boolean) {
             registered = plugged
-            mainHandler.post { status.text = if (plugged) "HID 已注册；请在收银机蓝牙列表中连接手机" else "HID 未注册" }
+            mainHandler.post { status.text = if (plugged) "HID 已注册；请在收银机连接" else "HID 未注册" }
         }
         override fun onConnectionStateChanged(device: BluetoothDevice?, state: Int) {
             if (state == BluetoothProfile.STATE_CONNECTED) {
                 target = device
-                mainHandler.post { status.text = "已连接键盘主机：" + safeName(device) }
+                mainHandler.post { status.text = "已连接主机：" + safeName(device) }
             } else if (device == target && state == BluetoothProfile.STATE_DISCONNECTED) {
                 mainHandler.post { status.text = "蓝牙键盘已断开" }
                 target = null
@@ -75,67 +94,403 @@ class MainActivity : Activity() {
         val btAdapter = BluetoothAdapter.getDefaultAdapter()
         adapter = btAdapter
         if (btAdapter == null) status.text = "设备没有蓝牙适配器"
-        else status.text = "请授予蓝牙权限，然后初始化蓝牙键盘"
+        else status.text = "请授予蓝牙权限并初始化蓝牙"
     }
 
     private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 24, 24, 24)
-        }
-        val title = TextView(this).apply { text = "批量条码快捷键盘"; textSize = 22f }
-        status = TextView(this).apply { textSize = 13f; setPadding(0, 8, 0, 8) }
-        
-        val init = Button(this).apply {
-            text = "初始化蓝牙键盘"
-            setOnClickListener { initHid() }
-        }
-        val connect = Button(this).apply {
-            text = "选择已配对的收银机"
-            setOnClickListener { choosePairedHost() }
-        }
-        autoEnter = CheckBox(this).apply { text = "发送条码后自动回车"; isChecked = false }
-        
-        nameInput = EditText(this).apply { hint = "统一备注 (选填，如：VIP批次)" }
-        
-        // 改造为多行输入框，支持批量粘贴多行数字
-        codeInput = EditText(this).apply {
-            hint = "输入数字，多行或多个请换行&#10;例如：\n88001\n88002"
-            minLines = 3
-            maxLines = 5
-            gravity = Gravity.TOP
-        }
-        
-        val add = Button(this).apply {
-            text = "批量生成并保存"
-            setOnClickListener { addBatchCodes() }
-        }
-        
-        val clearAll = Button(this).apply {
-            text = "一键清空所有记录"
-            setOnClickListener { clearAllCodes() }
+            setPadding(16, 16, 16, 16)
         }
 
-        list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val scroll = ScrollView(this).apply { addView(list) }
-        
+        val title = TextView(this).apply { text = "蓝牙发码双模助手"; textSize = 18f; gravity = Gravity.CENTER }
+        status = TextView(this).apply { textSize = 12f; gravity = Gravity.CENTER; setPadding(0, 4, 0, 4) }
+
+        val btBar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; weightSum = 2f }
+        val initBtn = Button(this).apply {
+            text = "初始化蓝牙"
+            setOnClickListener { initHid() }
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val connectBtn = Button(this).apply {
+            text = "选择收银机"
+            setOnClickListener { choosePairedHost() }
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        btBar.addView(initBtn)
+        btBar.addView(connectBtn)
+
+        autoEnter = CheckBox(this).apply { text = "发送后自动回车"; isChecked = true }
+
+        val tabLayout = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; weightSum = 2f; setPadding(0, 8, 0, 8) }
+        tabBtn1 = Button(this).apply {
+            text = "📄 页面1: 会员号(点5次消失)"
+            setBackgroundColor(0xFF007bff.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener { switchPage(1) }
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        tabBtn2 = Button(this).apply {
+            text = "🏷️ 页面2: 7系条码(无限制)"
+            setBackgroundColor(0xFF6c757d.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener { switchPage(2) }
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        tabLayout.addView(tabBtn1)
+        tabLayout.addView(tabBtn2)
+
+        // ==================== 页面1 布局 ====================
+        page1Layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.VISIBLE
+        }
+        batchNoteInput = EditText(this).apply { hint = "统一备注 (选填，如: VIP批次)" }
+        batchInput = EditText(this).apply {
+            hint = "输入纯数字，多行换行批量生成\n88001\n88002"
+            minLines = 3; maxLines = 5; gravity = Gravity.TOP
+        }
+        val batchGenBtn = Button(this).apply {
+            text = "批量生成会员号"
+            setBackgroundColor(0xFF28a745.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener { addBatchMembers() }
+        }
+        val batchClearBtn = Button(this).apply {
+            text = "清空所有会员号"
+            setOnClickListener { clearBatchCodes() }
+        }
+        batchListLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll1 = ScrollView(this).apply { addView(batchListLayout) }
+
+        page1Layout.addView(batchNoteInput)
+        page1Layout.addView(batchInput)
+        page1Layout.addView(batchGenBtn)
+        page1Layout.addView(batchClearBtn)
+        page1Layout.addView(TextView(this).apply { text = "会员发码列 (点击发码，满5次自动删除):"; textSize = 13f; setPadding(0, 8, 0, 4) })
+        val p1Params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0).apply { weight = 1f }
+        page1Layout.addView(scroll1, p1Params)
+
+        // ==================== 页面2 布局 (7系条码) ====================
+        page2Layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        modeToggleBtn = Button(this).apply {
+            text = "当前模式：【按重量生成】(点击切换)"
+            setBackgroundColor(0xFF28a745.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener {
+                isPriceMode = !isPriceMode
+                updateBarcodeModeUi()
+            }
+        }
+        skuInput = EditText(this).apply { 
+            hint = "货号 (如: 16)"
+            setOnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus && isPriceMode) autoFillUnitPrice()
+            }
+        }
+        weightOrPriceInput = EditText(this).apply { hint = "重量 (kg)，如: 0.525" }
+        unitInput = EditText(this).apply { hint = "单价 (元/kg)"; visibility = View.GONE }
+        barNoteInput = EditText(this).apply { hint = "备注 (如: 青瓜)" }
+
+        val barGenBtn = Button(this).apply {
+            text = "生成7系条码"
+            setBackgroundColor(0xFF17a2b8.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            setOnClickListener { generate7SeriesCode() }
+        }
+        val barClearBtn = Button(this).apply {
+            text = "清空所有7系条码"
+            setOnClickListener { clear7SeriesCodes() }
+        }
+        barListLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll2 = ScrollView(this).apply { addView(barListLayout) }
+
+        page2Layout.addView(modeToggleBtn)
+        page2Layout.addView(skuInput)
+        page2Layout.addView(weightOrPriceInput)
+        page2Layout.addView(unitInput)
+        page2Layout.addView(barNoteInput)
+        page2Layout.addView(barGenBtn)
+        page2Layout.addView(barClearBtn)
+        page2Layout.addView(TextView(this).apply { text = "7系条码发码列 (点击直接发码，可无限次使用):"; textSize = 13f; setPadding(0, 8, 0, 4) })
+        val p2Params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0).apply { weight = 1f }
+        page2Layout.addView(scroll2, p2Params)
+
         root.addView(title)
         root.addView(status)
-        root.addView(init)
-        root.addView(connect)
+        root.addView(btBar)
         root.addView(autoEnter)
-        root.addView(nameInput)
-        root.addView(codeInput)
-        root.addView(add)
-        root.addView(clearAll)
-        root.addView(TextView(this).apply { text = "已保存的数字列表（点击发送并自动计数）"; textSize = 16f; setPadding(0, 16, 0, 8) })
+        root.addView(tabLayout)
         
-        val scrollParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0).apply {
-            weight = 1f
+        val containerParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0).apply { weight = 1f }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(page1Layout, containerParams)
+            addView(page2Layout, containerParams)
         }
-        root.addView(scroll, scrollParams)
+        root.addView(container, containerParams)
+
         setContentView(root)
-        renderCodes()
+        renderBatchList()
+        renderBarList()
+    }
+
+    private fun switchPage(page: Int) {
+        if (page == 1) {
+            page1Layout.visibility = View.VISIBLE
+            page2Layout.visibility = View.GONE
+            tabBtn1.setBackgroundColor(0xFF007bff.toInt())
+            tabBtn2.setBackgroundColor(0xFF6c757d.toInt())
+        } else {
+            page1Layout.visibility = View.GONE
+            page2Layout.visibility = View.VISIBLE
+            tabBtn1.setBackgroundColor(0xFF6c757d.toInt())
+            tabBtn2.setBackgroundColor(0xFF007bff.toInt())
+        }
+    }
+
+    private fun updateBarcodeModeUi() {
+        if (isPriceMode) {
+            modeToggleBtn.text = "当前模式：【按价格反推】(点击切换)"
+            modeToggleBtn.setBackgroundColor(0xFF17a2b8.toInt())
+            weightOrPriceInput.hint = "总价 (元)，如: 12.5"
+            unitInput.visibility = View.VISIBLE
+        } else {
+            modeToggleBtn.text = "当前模式：【按重量生成】(点击切换)"
+            modeToggleBtn.setBackgroundColor(0xFF28a745.toInt())
+            weightOrPriceInput.hint = "重量 (kg)，如: 0.525"
+            unitInput.visibility = View.GONE
+        }
+    }
+
+    private fun autoFillUnitPrice() {
+        val sku = skuInput.text.toString().trim().padStart(6, '0')
+        val mapStr = prefs.getString("sku_price_map", "{}")
+        try {
+            val map = JSONObject(mapStr)
+            if (map.has(sku)) {
+                unitInput.setText(map.getString(sku))
+                Toast.makeText(this, "已自动填充历史单价", Toast.LENGTH_SHORT).show()
+            }
+        } catch (_: Exception) {}
+    }
+
+    // ==================== 页面1 逻辑 (会员号批量，带5次限制) ====================
+    private fun addBatchMembers() {
+        val raw = batchInput.text.toString().trim()
+        val note = batchNoteInput.text.toString().trim().ifBlank { "默认批次" }
+        if (raw.isEmpty()) {
+            Toast.makeText(this, "请输入数字", Toast.LENGTH_SHORT).show(); return
+        }
+        val lines = raw.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        val history = loadJson("batch_members")
+        var maxS = 0
+        for (i in 0 until history.length()) {
+            val s = history.optJSONObject(i)?.optInt("serial", 0) ?: 0
+            if (s > maxS) maxS = s
+        }
+        val newArr = JSONArray()
+        lines.forEach { num ->
+            maxS++
+            newArr.put(JSONObject().apply {
+                put("id", System.currentTimeMillis() + maxS)
+                put("serial", maxS)
+                put("content", num)
+                put("note", note)
+                put("clickCount", 0)
+            })
+        }
+        for (i in 0 until history.length()) newArr.put(history.get(i))
+        saveJson("batch_members", newArr)
+        batchInput.setText("")
+        batchNoteInput.setText("")
+        renderBatchList()
+        Toast.makeText(this, "成功添加 ${lines.size} 个会员号", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun renderBatchList() {
+        if (!::batchListLayout.isInitialized) return
+        batchListLayout.removeAllViews()
+        val arr = loadJson("batch_members")
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val id = obj.optLong("id")
+            val serial = obj.optInt("serial")
+            val content = obj.optString("content")
+            val note = obj.optString("note")
+            val count = obj.optInt("clickCount", 0)
+
+            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 6, 0, 6) }
+            val btn = Button(this).apply {
+                text = "NO.$serial [$note] -> $content\n(已用: $count / 5)"
+                textSize = 14f
+                setOnClickListener {
+                    if (checkReady()) {
+                        sendText(content + if (autoEnter.isChecked) "\n" else "")
+                        updateCountAndRender("batch_members", id, ::renderBatchList)
+                    }
+                }
+            }
+            row.addView(btn)
+            batchListLayout.addView(row)
+        }
+    }
+
+    private fun clearBatchCodes() {
+        prefs.edit().remove("batch_members").apply()
+        renderBatchList()
+    }
+
+    // ==================== 页面2 逻辑 (7系条码，无次数限制) ====================
+    private fun calculateEAN13(first12: String): String {
+        var sO = 0; var sE = 0
+        for (i in 0 until 12) {
+            val n = first12[i].toString().toInt()
+            if ((i + 1) % 2 == 0) sE += n else sO += n
+        }
+        return first12 + ((10 - ((sO + sE * 3) % 10)) % 10)
+    }
+
+    private fun generate7SeriesCode() {
+        val skuStr = skuInput.text.toString().trim()
+        val valStr = weightOrPriceInput.text.toString().trim()
+        val note = barNoteInput.text.toString().trim().ifBlank { "未命名" }
+        if (skuStr.isEmpty() || valStr.isEmpty()) {
+            Toast.makeText(this, "请填写完整", Toast.LENGTH_SHORT).show(); return
+        }
+        val sku = skuStr.padStart(6, '0')
+        var grams = 0
+        var subDesc = ""
+
+        if (!isPriceMode) {
+            val w = valStr.toDoubleOrNull() ?: 0.0
+            grams = Math.round(w * 1000).toInt()
+            subDesc = "重量: ${w}kg"
+        } else {
+            val u = unitInput.text.toString().toDoubleOrNull() ?: 0.0
+            val t = valStr.toDoubleOrNull() ?: 0.0
+            if (u <= 0) { Toast.makeText(this, "请填写有效单价", Toast.LENGTH_SHORT).show(); return }
+            grams = Math.round((t / u) * 1000).toInt()
+            subDesc = "总价: ${t}元 (约${String.format("%.3f", grams / 1000.0)}kg)"
+            try {
+                val map = JSONObject(prefs.getString("sku_price_map", "{}"))
+                map.put(sku, u.toString())
+                prefs.edit().putString("sku_price_map", map.toString()).apply()
+            } catch (_: Exception) {}
+        }
+
+        val code = calculateEAN13("7" + sku + grams.toString().padStart(5, '0'))
+        val history = loadJson("series7_codes")
+        var maxS = 0
+        for (i in 0 until history.length()) {
+            val s = history.optJSONObject(i)?.optInt("serial", 0) ?: 0
+            if (s > maxS) maxS = s
+        }
+        maxS++
+
+        val newArr = JSONArray().put(JSONObject().apply {
+            put("id", System.currentTimeMillis())
+            put("serial", maxS)
+            put("content", code)
+            put("note", note)
+            put("sub", subDesc)
+        })
+        for (i in 0 until history.length()) newArr.put(history.get(i))
+        saveJson("series7_codes", newArr)
+        weightOrPriceInput.setText("")
+        renderBarList()
+        Toast.makeText(this, "7系条码生成成功", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun renderBarList() {
+        if (!::barListLayout.isInitialized) return
+        barListLayout.removeAllViews()
+        val arr = loadJson("series7_codes")
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            val id = obj.optLong("id")
+            val serial = obj.optInt("serial")
+            val code = obj.optString("content")
+            val note = obj.optString("note")
+            val sub = obj.optString("sub")
+
+            val row = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 6, 0, 6) }
+            val btn = Button(this).apply {
+                // 不显示使用次数，支持无限次点击发送
+                text = "NO.$serial [$note] $sub\n条码: $code (点击可直接发送)"
+                textSize = 14f
+                setOnClickListener {
+                    if (checkReady()) {
+                        sendText(code + if (autoEnter.isChecked) "\n" else "")
+                    }
+                }
+            }
+            
+            // 附带一个删除按钮，用户不需要时可手动点删除
+            val delBtn = Button(this).apply {
+                text = "删除此条码"
+                textSize = 11f
+                setOnClickListener { removeItem("series7_codes", id, ::renderBarList) }
+            }
+
+            row.addView(btn)
+            row.addView(delBtn)
+            barListLayout.addView(row)
+        }
+    }
+
+    private fun clear7SeriesCodes() {
+        prefs.edit().remove("series7_codes").apply()
+        renderBarList()
+    }
+
+    // ==================== 通用辅助方法 ====================
+    private fun loadJson(key: String): JSONArray = try { JSONArray(prefs.getString(key, "[]")) } catch (_: Exception) { JSONArray() }
+    private fun saveJson(key: String, arr: JSONArray) { prefs.edit().putString(key, arr.toString()).apply() }
+
+    private fun updateCountAndRender(key: String, targetId: Long, renderFunc: () -> Unit) {
+        val arr = loadJson(key)
+        val newArr = JSONArray()
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            if (obj.optLong("id", 0) == targetId) {
+                val count = obj.optInt("clickCount", 0) + 1
+                if (count < 5) {
+                    obj.put("clickCount", count)
+                    newArr.put(obj)
+                }
+            } else {
+                newArr.put(obj)
+            }
+        }
+        saveJson(key, newArr)
+        renderFunc()
+    }
+
+    private fun removeItem(key: String, targetId: Long, renderFunc: () -> Unit) {
+        val arr = loadJson(key)
+        val newArr = JSONArray()
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            if (obj.optLong("id", 0) != targetId) {
+                newArr.put(obj)
+            }
+        }
+        saveJson(key, newArr)
+        renderFunc()
+    }
+
+    private fun checkReady(): Boolean {
+        if (!registered || hid == null) {
+            Toast.makeText(this, "请先初始化蓝牙", Toast.LENGTH_SHORT).show(); return false
+        }
+        if (target == null) {
+            Toast.makeText(this, "请先选择收银机", Toast.LENGTH_SHORT).show(); return false
+        }
+        return true
     }
 
     private fun requestBluetoothPermissions() {
@@ -147,214 +502,32 @@ class MainActivity : Activity() {
     }
 
     private fun initHid() {
-        if (Build.VERSION.SDK_INT < 28) {
-            status.text = "系统版本过低：需要 Android 9/API 28 或更高"
-            return
-        }
-        if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED && Build.VERSION.SDK_INT >= 31) {
-            requestBluetoothPermissions()
-            status.text = "请先授予附近设备权限，再点初始化"
-            return
-        }
-        val bt = adapter
-        if (bt == null || !bt.isEnabled) {
-            status.text = "请先在手机系统中打开蓝牙"
-            return
-        }
-        status.text = "正在请求系统蓝牙 HID 服务…"
+        if (Build.VERSION.SDK_INT < 28) { status.text = "系统版本过低"; return }
+        val bt = adapter ?: return
+        if (!bt.isEnabled) { status.text = "请先打开手机蓝牙"; return }
         bt.getProfileProxy(this, object : BluetoothProfile.ServiceListener {
             override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
                 if (profile != BluetoothProfile.HID_DEVICE) return
                 hid = proxy as BluetoothHidDevice
-                val sdp = BluetoothHidDeviceAppSdpSettings(
-                    "Barcode Keyboard", "Preset barcode sender", "OpenAI prototype",
-                    BluetoothHidDevice.SUBCLASS1_KEYBOARD, reportDescriptor
-                )
+                val sdp = BluetoothHidDeviceAppSdpSettings("Keyboard", "Desc", "Prov", BluetoothHidDevice.SUBCLASS1_KEYBOARD, reportDescriptor)
                 val ok = hid?.registerApp(sdp, null, null, executor, callback) ?: false
-                status.text = if (ok) "已提交 HID 注册请求，等待系统回调…" else "HID 注册请求失败：设备/系统可能不支持"
+                mainHandler.post { status.text = if (ok) "HID 注册请求已提交" else "注册失败" }
             }
-            override fun onServiceDisconnected(profile: Int) {
-                hid = null
-                registered = false
-                status.text = "HID 系统服务断开"
-            }
+            override fun onServiceDisconnected(profile: Int) { hid = null; registered = false }
         }, BluetoothProfile.HID_DEVICE)
     }
 
     private fun choosePairedHost() {
         val bt = adapter ?: return
-        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            requestBluetoothPermissions(); return
-        }
         val devices = try { bt.bondedDevices.toList() } catch (_: SecurityException) { emptyList() }
-        if (devices.isEmpty()) {
-            status.text = "没有已配对设备：请先在收银机蓝牙设置中配对手机"
-            return
-        }
+        if (devices.isEmpty()) { status.text = "没有已配对设备"; return }
         val labels = devices.map { "${safeName(it)}\n${it.address}" }.toTypedArray()
         android.app.AlertDialog.Builder(this)
-            .setTitle("选择收银机/键盘主机")
+            .setTitle("选择收银机")
             .setItems(labels) { _, which ->
-                val d = devices[which]
-                target = d
-                val ok = try { hid?.connect(d) ?: false } catch (_: Exception) { false }
-                status.text = if (ok) "已请求连接：${safeName(d)}，请查看收银机状态" else "连接请求未成功；请尝试从收银机蓝牙菜单连接手机"
+                target = devices[which]
+                status.text = "已连接: ${safeName(target)}"
             }.setNegativeButton("取消", null).show()
-    }
-
-    private fun addBatchCodes() {
-        val rawText = codeInput.text.toString().trim()
-        val note = nameInput.text.toString().trim().ifBlank { "默认批次" }
-
-        if (rawText.isEmpty()) {
-            Toast.makeText(this, "请输入至少一串数字", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // 按行分割，支持同时粘贴多行数字
-        val lines = rawText.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
-        if (lines.isEmpty()) {
-            Toast.makeText(this, "有效数字为空", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val history = loadCodes()
-        // 计算当前最大的流水号
-        var maxSerial = 0
-        for (i in 0 until history.length()) {
-            val obj = history.optJSONObject(i)
-            val s = obj?.optInt("serial", 0) ?: 0
-            if (s > maxSerial) maxSerial = s
-        }
-
-        val newArray = JSONArray()
-        // 新输入的放在最前面
-        lines.forEach { num ->
-            maxSerial++
-            val itemObj = JSONObject().apply {
-                put("id", System.currentTimeMillis() + maxSerial)
-                put("serial", maxSerial)
-                put("content", num)
-                put("note", note)
-                put("clickCount", 0)
-            }
-            newArray.put(itemObj)
-        }
-
-        // 把旧数据追加到新数据后面
-        for (i in 0 until history.length()) {
-            newArray.put(history.get(i))
-        }
-
-        saveCodes(newArray)
-        codeInput.setText("")
-        nameInput.setText("")
-        renderCodes()
-        Toast.makeText(this, "成功批量添加 ${lines.size} 个条码", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun loadCodes(): JSONArray = try { JSONArray(prefs.getString("codes", "[]")) } catch (_: Exception) { JSONArray() }
-    private fun saveCodes(arr: JSONArray) { prefs.edit().putString("codes", arr.toString()).apply() }
-
-    private fun clearAllCodes() {
-        val history = loadCodes()
-        if (history.length() == 0) {
-            Toast.makeText(this, "当前没有记录", Toast.LENGTH_SHORT).show()
-            return
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("确认清空")
-            .setMessage("确定要清空所有的数字记录吗？")
-            .setPositiveButton("确定") { _, _ ->
-                prefs.edit().remove("codes").apply()
-                renderCodes()
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    private fun renderCodes() {
-        if (!::list.isInitialized) return
-        list.removeAllViews()
-        val arr = loadCodes()
-        
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            val id = obj.optLong("id", 0)
-            val serial = obj.optInt("serial", 0)
-            val content = obj.optString("content", "")
-            val note = obj.optString("note", "")
-            val clickCount = obj.optInt("clickCount", 0)
-
-            val row = LinearLayout(this).apply { 
-                orientation = LinearLayout.VERTICAL
-                setPadding(0, 8, 0, 8)
-            }
-
-            // 发送按钮：点击后发送蓝牙，并且计数 +1，达到 5 次自动删除
-            val sendBtn = Button(this).apply {
-                text = "NO.$serial [$note]\n$content\n(已用: $clickCount / 5)"
-                textSize = 15f
-                setOnClickListener {
-                    if (!registered || hid == null) {
-                        Toast.makeText(this@MainActivity, "请先初始化并注册蓝牙 HID 键盘", Toast.LENGTH_LONG).show()
-                    } else if (target == null) {
-                        Toast.makeText(this@MainActivity, "请先连接收银机/主机", Toast.LENGTH_LONG).show()
-                    } else {
-                        // 发送蓝牙数据
-                        sendText(content + if (autoEnter.isChecked) "\n" else "")
-                        
-                        // 更新点击次数逻辑 (达到 5 次自动删除)
-                        updateOrRemoveItem(id)
-                    }
-                }
-            }
-
-            val deleteBtn = Button(this).apply {
-                text = "直接删除"
-                textSize = 12f
-                setOnClickListener {
-                    removeItem(id)
-                }
-            }
-
-            row.addView(sendBtn)
-            row.addView(deleteBtn)
-            list.addView(row)
-        }
-    }
-
-    private fun updateOrRemoveItem(targetId: Long) {
-        val arr = loadCodes()
-        val newArr = JSONArray()
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            if (obj.optLong("id", 0) == targetId) {
-                val count = obj.optInt("clickCount", 0) + 1
-                if (count < 5) {
-                    obj.put("clickCount", count)
-                    newArr.put(obj)
-                }
-                // 如果 count >= 5 则直接过滤掉（实现满5次自动消减删除）
-            } else {
-                newArr.put(obj)
-            }
-        }
-        saveCodes(newArr)
-        renderCodes()
-    }
-
-    private fun removeItem(targetId: Long) {
-        val arr = loadCodes()
-        val newArr = JSONArray()
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            if (obj.optLong("id", 0) != targetId) {
-                newArr.put(obj)
-            }
-        }
-        saveCodes(newArr)
-        renderCodes()
     }
 
     private fun sendText(text: String) {
@@ -363,19 +536,13 @@ class MainActivity : Activity() {
         executor.execute {
             for (ch in text) {
                 val key = keyCode(ch) ?: continue
-                val down = byteArrayOf(0, 0, key.toByte(), 0, 0, 0, 0, 0)
-                val up = byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0)
                 try {
-                    h.sendReport(device, 1, down)
-                    Thread.sleep(5) // 加快传输速度
-                    h.sendReport(device, 1, up)
+                    h.sendReport(device, 1, byteArrayOf(0, 0, key.toByte(), 0, 0, 0, 0, 0))
                     Thread.sleep(5)
-                } catch (_: Exception) {
-                    mainHandler.post { status.text = "发送中断；请确认 HID 连接状态" }
-                    return@execute
-                }
+                    h.sendReport(device, 1, byteArrayOf(0, 0, 0, 0, 0, 0, 0, 0))
+                    Thread.sleep(5)
+                } catch (_: Exception) { break }
             }
-            mainHandler.post { status.text = "发送完成：${text.length} 个字符" }
         }
     }
 
@@ -386,9 +553,7 @@ class MainActivity : Activity() {
         else -> null
     }
 
-    private fun safeName(device: BluetoothDevice?): String = try {
-        device?.name ?: "蓝牙设备"
-    } catch (_: SecurityException) { "蓝牙设备" }
+    private fun safeName(device: BluetoothDevice?): String = try { device?.name ?: "蓝牙设备" } catch (_: SecurityException) { "蓝牙设备" }
 
     override fun onDestroy() {
         super.onDestroy()
